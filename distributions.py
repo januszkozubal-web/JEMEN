@@ -215,10 +215,19 @@ def run_monte_carlo(
         "p95": float(np.percentile(R_ok, 95)),
     }
 
+    interpret = interpret_beta(beta, beta_kind, n_fail, int(R_ok.size))
+    interpret.insert(
+        0,
+        f"**Metoda: CMC** (klasyczne Monte Carlo) — {int(R_ok.size):,} realizacji.",
+    )
+
     return {
+        "method": "CMC",
+        "method_label": "CMC (Crude Monte Carlo)",
         "n": n,
         "n_ok": int(R_ok.size),
         "n_fail": n_fail,
+        "n_eval": int(R_ok.size),
         "R": R_ok,
         "phi_ln": phi_ln,
         "c_ln": c_ln,
@@ -233,6 +242,7 @@ def run_monte_carlo(
         "V": float(V),
         "p_f": p_f,
         "se_pf": se_pf,
+        "cov_pf": float("nan"),
         "beta": beta,
         "beta_kind": beta_kind,
         "beta_note": beta_note,
@@ -240,6 +250,13 @@ def run_monte_carlo(
         "se_beta": se_beta,
         "FS_det": float(R_det / V) if V > 0 else float("inf"),
         "FS_p5": float(pctl["p5"] / V) if V > 0 else float("inf"),
-        "interpret": interpret_beta(beta, beta_kind, n_fail, int(R_ok.size)),
+        "interpret": interpret,
         "recommend": recommend_n(3.8, 30),
+        "ss_p0": None,
+        "ss_levels": None,
+        "ss_p_conds": None,
+        "ss_thresholds": None,
+        "ss_n_seed": None,
+        "ss_accept_rate": None,
+        "ss_prop_sd": None,
     }

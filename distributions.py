@@ -72,37 +72,40 @@ def beta_from_pf(p_f: float) -> float:
 
 
 def interpret_beta(beta: float, beta_kind: str, n_fail: int, n_ok: int) -> list[str]:
-    """Krótkie, ludzkie wyjaśnienie wyniku."""
+    """Krótkie, ludzkie wyjaśnienie wyniku β / p_f."""
     lines: list[str] = []
     if beta_kind == "lower_bound":
         lines.append(
             f"**Brak awarii** w {n_ok:,} próbach → nie znamy dokładnego β, tylko "
-            f"**dolną granicę** β ≳ {beta:.2f}."
+            f"**dolną granicę** β ≳ {beta:.2f} (z 1/(N+1))."
         )
         lines.append(
-            "Żeby dostać β „z ogona”, zwiększ N albo zwiększ zmienność / obciążenie V."
+            "Żeby zobaczyć β „z ogona”, zwiększ N albo zwiększ zmienność / obciążenie V "
+            "(albo użyj Subset Simulation)."
         )
         return lines
 
+    pf = float(stats.norm.cdf(-beta))
     lines.append(
-        f"**β = {beta:.2f}** oznacza, że w standardowym modelu awarii "
-        f"prawdopodobieństwo przekroczenia nośności wynosi ok. "
-        f"**p_f = Φ(−β)** (im większe β, tym bezpieczniej)."
+        f"**β = {beta:.2f}** ↔ **p_f ≈ {pf:.2e}** "
+        f"(β = −Φ⁻¹(p_f); większe β = rzadsza awaria)."
     )
     if beta < 2.0:
-        lines.append("β < 2 — **bardzo niska** niezawodność (częste awarie w modelu).")
+        lines.append("β < 2 — **bardzo niska** niezawodność w tym modelu.")
     elif beta < 3.0:
-        lines.append("β ≈ 2…3 — umiarkowana; często za mało na typowe wymagania konstrukcyjne.")
+        lines.append("β ≈ 2…3 — umiarkowana; często za mało na typowe wymagania.")
     elif beta < 3.5:
-        lines.append("β ≈ 3…3,5 — poziom często spotykany jako dolny zakres w praktyce.")
+        lines.append("β ≈ 3…3,5 — dolny zakres często spotykany w praktyce.")
     elif beta < 4.2:
         lines.append(
-            "β ≈ 3,5…4,2 — typowy zakres docelowy wielu zastosowań "
+            "β ≈ 3,5…4,2 — typowy zakres docelowy "
             "(orientacyjnie rząd β≈3,8 przy niektórych założeniach CC2 / 50 lat)."
         )
     else:
-        lines.append("β > 4,2 — **wysoka** niezawodność w tym modelu (albo za mało awarii w próbie).")
-
+        lines.append(
+            "β > 4,2 — **wysoka** niezawodność w tym modelu "
+            "(albo za mało awarii w próbie przy CMC)."
+        )
     lines.append(
         f"W tej próbie: **{n_fail} awarii / {n_ok:,}** poprawnych realizacji."
     )

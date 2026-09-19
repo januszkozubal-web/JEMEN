@@ -10,6 +10,7 @@ import streamlit as st
 from bearing import resistance_Rk
 from distributions import normal_moments_to_lognormal, recommend_n, run_monte_carlo
 from subset_sim import run_subset_simulation
+from scipy import stats
 
 CUSTOM_CSS = """
 <style>
@@ -142,6 +143,113 @@ Wersja testowa — nie do dokumentacji projektowej.
 ---
 JEMEN · jvk · MIT
 """
+
+
+def _style_ax(ax, fig) -> None:
+    ax.set_facecolor("#0e1117")
+    fig.patch.set_facecolor("#0e1117")
+    ax.tick_params(colors="#aaa")
+    ax.xaxis.label.set_color("#aaa")
+    ax.yaxis.label.set_color("#aaa")
+    ax.title.set_color("#e8eef5")
+    for spine in ax.spines.values():
+        spine.set_color("#333")
+
+
+def _plot_pf_beta_charts(res: dict) -> None:
+    """Histogram R_k (awaria R<V) + histogram g=R−V (awaria g<0) + pasek β/p_f."""
+    R = np.asarray(res["R"], dtype=float)
+    V = float(res["V"])
+    g = R - V
+    beta = float(res["beta"])
+    pf = float(res["p_f"])
+
+    fig, axes = plt.subplots(1, 3, figsize=(11.2, 3.5))
+
+    # --- 1: R_k ---
+    ax = axes[0]
+    ax.hist(R, bins=40, color="#5BA3D9", edgecolor="#1a2332", alpha=0.9)
+    ax.axvspan(float(np.min(R)) - 1.0, V, color="#e55", alpha=0.18, label="strefa awarii R < V")
+    ax.axvline(V, color="#e55", lw=2, label=f"V = {V:.0f}")
+    ax.axvline(res["R_det"], color="#3c9", lw=1.5, ls="--", label=f"R(μ) = {res['R_det']:.0f}")
+    ax.axvline(res["R_p5"], color="#e8a838", lw=1.2, ls=":", label=f"R₅ = {res['R_p5']:.0f}")
+    ax.set_xlabel("R_k [kN]")
+    ax.set_ylabel("liczba realizacji")
+    ax.set_title("1. Nośność R_k")
+    ax.legend(fontsize=7, loc="upper right")
+    _style_ax(ax, fig)
+
+    # --- 2: g = R − V ---
+    ax = axes[1]
+    ax.hist(g, bins=40, color="#7aa6c2", edgecolor="#1a2332", alpha=0.9)
+    ax.axvspan(float(np.min(g)) - 1.0, 0.0, color="#e55", alpha=0.22, label="awaria g < 0")
+    ax.axvline(0.0, color="#e55", lw=2, label="g = 0 (granica)")
+    ax.axvline(float(np.mean(g)), color="#3c9", lw=1.4, ls="--", label=f"średnia g = {np.mean(g):.0f}")
+    ax.set_xlabel("g = R_k − V [kN]")
+    ax.set_ylabel("liczba realizacji")
+    ax.set_title("2. Stan graniczny g")
+    ax.legend(fontsize=7, loc="upper right")
+    _style_ax(ax, fig)
+
+    # --- 3: β ↔ p_f ---
+    ax = axes[2]
+    betas = np.linspace(0.0, max(4.5, beta + 0.5), 200)
+    pfs = stats.norm.cdf(-betas)
+    ax.semilogy(betas, pfs, color="#5BA3D9", lw=2, label="p_f = Φ(−β)")
+    ax.axvline(beta, color="#e8a838", lw=1.8, label=f"Twój β = {beta:.2f}")
+    ax.axhline(max(pf, 1e-16), color="#e55", lw=1.4, ls="--", label=f"Twoja p_f = {pf:.2e}")
+    ax.plot([beta], [max(pf, 1e-16)], "o", color="#e8a838", ms=8)
+    ax.set_xlabel("indeks β")
+    ax.set_ylabel("p_f (skala log)")
+    ax.set_title("3. Krzywa β ↔ p_f")
+    ax.legend(fontsize=7, loc="upper right")
+    ax.grid(True, which="both", color="#222", lw=0.6)
+    _style_ax(ax, fig)
+
+    fig.tight_layout()
+    st.pyplot(fig, clear_figure=True)
+    plt.close(fig)
+
+
+def _plot_ss_levels(res: dict) -> None:
+    """Progi b_i oraz skumulowane p_f z iloczynu p_cond."""
+    levels = res["ss_levels"]
+    xs = [lv["level"] for lv in levels]
+    bs = [lv["b"] for lv in levels]
+    pconds = [lv["p_cond"] for lv in levels]
+    # skumulowane p_f po każdym poziomie
+    cum = []
+    p = 1.0
+    for pc in pconds:
+        p *= float(pc)
+        cum.append(p)
+
+    fig, axes = plt.subplots(1, 2, figsize=(9.5, 3.4))
+
+    ax = axes[0]
+    ax.plot(xs, bs, "o-", color="#5BA3D9", lw=2, ms=7)
+    ax.axhline(0.0, color="#e55", lw=1.5, ls="--", label="b = 0 (awaria)")
+    ax.set_xlabel("poziom SS")
+    ax.set_ylabel("próg b = g [kN]")
+    ax.set_title("Progi pośrednie b_i → 0")
+    ax.legend(fontsize=8)
+    ax.set_xticks(xs)
+    _style_ax(ax, fig)
+
+    ax = axes[1]
+    ax.semilogy(xs, cum, "s-", color="#e8a838", lw=2, ms=7)
+    ax.axhline(res["p_f"], color="#e55", lw=1.2, ls=":", label=f"p_f końcowe = {res['p_f']:.2e}")
+    ax.set_xlabel("poziom SS")
+    ax.set_ylabel("iloczyn p_cond (log)")
+    ax.set_title("Narastanie p_f = ∏ p_i")
+    ax.legend(fontsize=8)
+    ax.set_xticks(xs)
+    ax.grid(True, which="both", color="#222", lw=0.6)
+    _style_ax(ax, fig)
+
+    fig.tight_layout()
+    st.pyplot(fig, clear_figure=True)
+    plt.close(fig)
 
 
 def main() -> None:
@@ -383,67 +491,52 @@ standardowej. Przy rzadkich awariach zwykle **znacznie mniej** wywołań nośno�
                     f"akceptacja MMA ≈ {ar_txt} · CoV(p_f) ≈ {cov_txt}"
                 )
 
-            st.markdown("## 2) Prawdopodobieństwo awarii p_f")
+            st.markdown("## 2) p_f i β — co z tego wynika")
             se_b = res["se_beta"]
             se_b_txt = f"{se_b:.3f}" if np.isfinite(se_b) else "—"
             st.markdown(
                 f"""
-| Wielkość | Wartość | Znaczenie |
-|----------|---------|-----------|
-| **p_f** | **{res['p_f']:.4e}** | P(R_k &lt; V) |
-| awarie | **{res['n_fail']} / {res['n_ok']:,}** | CMC: cała próba; SS: ostatni poziom |
-| SE(p_f) | {res['se_pf']:.2e} | niepewność p_f |
-| SE(β) | {se_b_txt} | niepewność β |
-| β (momenty G) | {res['beta_moments']:.3f} | μ_G/σ_G (orientacyjnie) |
+| Wielkość | Wartość | Jak czytać |
+|----------|---------|------------|
+| **p_f** | **{res['p_f']:.4e}** | szansa, że nośność R_k spadnie poniżej obciążenia V |
+| **β** | **{res['beta']:.3f}** | ta sama informacja w skali inżynierskiej: większe β = mniejsza p_f |
+| awarie w próbie | **{res['n_fail']} / {res['n_ok']:,}** | CMC: cała próba; SS: tylko ostatni poziom |
+| SE(p_f) / SE(β) | {res['se_pf']:.2e} / {se_b_txt} | niepewność z próby (im więcej awarii, tym ciaśniej) |
+| β z momentów G | {res['beta_moments']:.3f} | μ_G/σ_G — szybkie przybliżenie, **nie** zastępuje β z p_f |
                 """
             )
+            st.caption(
+                "Związek: **β = −Φ⁻¹(p_f)**. Przykłady: β=0 → p_f≈50%; "
+                "β=3 → p_f≈1,4·10⁻³; β=3,8 → p_f≈7·10⁻⁵."
+            )
 
-            st.markdown("## 3) Nośność R_k")
+            st.markdown("## 3) Nośność R_k (liczby)")
             st.markdown(
                 f"""
 | | [kN] | Komentarz |
 |--|------|-----------|
-| **V** (stałe) | **{res['V']:.1f}** | obciążenie |
-| R_k na średnich | **{res['R_det']:.1f}** | bez losowania |
-| średnia R_k | **{res['R_mean']:.1f}** ± {res['R_std']:.1f} | z próby |
-| 5. percentyl R_k | **{res['R_p5']:.1f}** | |
-| mediana R_k | **{res['R_p50']:.1f}** | |
-| 95. percentyl R_k | **{res['R_p95']:.1f}** | |
-| FS = R(μ)/V | **{res['FS_det']:.2f}** | |
-| FS₅ = R₅/V | **{res['FS_p5']:.2f}** | |
+| **V** (stałe) | **{res['V']:.1f}** | obciążenie — czerwona linia na wykresie |
+| R_k na średnich | **{res['R_det']:.1f}** | jedna wartość bez losowania (zielona) |
+| średnia R_k z próby | **{res['R_mean']:.1f}** ± {res['R_std']:.1f} | rozrzut nośności |
+| 5. / 50. / 95. percentyl | **{res['R_p5']:.1f}** / **{res['R_p50']:.1f}** / **{res['R_p95']:.1f}** | |
+| FS = R(μ)/V | **{res['FS_det']:.2f}** | klasyczny zapas na średnich (bez rozrzutu) |
+| FS₅ = R₅/V | **{res['FS_p5']:.2f}** | zapas względem „pesymistycznego” ogona |
                 """
             )
 
-            fig, ax = plt.subplots(figsize=(7.4, 3.7))
-            ax.hist(res["R"], bins=50, color="#5BA3D9", edgecolor="#1a2332", alpha=0.9)
-            ax.axvline(res["V"], color="#e55", lw=2, label=f"V = {res['V']:.0f}")
-            ax.axvline(
-                res["R_det"],
-                color="#3c9",
-                lw=1.5,
-                ls="--",
-                label=f"R(μ) = {res['R_det']:.0f}",
+            st.markdown("## 4) Wykresy — p_f i β")
+            st.caption(
+                "**1.** Rozkład R_k — czerwona strefa / linia V = awaria (R_k < V).  \n"
+                "**2.** g = R_k − V — awaria gdy g < 0 (to ten sam warunek, inna skala).  \n"
+                "**3.** Krzywa β ↔ p_f — punkt pokazuje Twój wynik na standardowej relacji."
             )
-            ax.axvline(
-                res["R_p5"],
-                color="#e8a838",
-                lw=1.2,
-                ls=":",
-                label=f"R₅ = {res['R_p5']:.0f}",
-            )
-            ax.set_xlabel("R_k [kN]")
-            ax.set_ylabel("liczba realizacji")
-            title = "Rozkład R_k — " + res.get("method_label", "")
-            ax.set_title(title)
-            ax.legend(fontsize=8)
-            ax.set_facecolor("#0e1117")
-            fig.patch.set_facecolor("#0e1117")
-            ax.tick_params(colors="#aaa")
-            ax.xaxis.label.set_color("#aaa")
-            ax.yaxis.label.set_color("#aaa")
-            ax.title.set_color("#e8eef5")
-            st.pyplot(fig, clear_figure=True)
-            plt.close(fig)
+            _plot_pf_beta_charts(res)
+            if res.get("method") == "SS" and res.get("ss_levels"):
+                st.caption(
+                    "**SS:** lewy wykres — progi b_i schodzą do 0 (awaria); "
+                    "prawy — iloczyn p_cond narasta do końcowego p_f."
+                )
+                _plot_ss_levels(res)
 
             inp = st.session_state.get("mc_inp")
             if inp:
@@ -463,15 +556,26 @@ standardowej. Przy rzadkich awariach zwykle **znacznie mniej** wywołań nośno�
     with t3:
         st.markdown(
             r"""
+### Co znaczą p_f i β?
+- **p_f** — prawdopodobieństwo awarii: P(R_k < V). Im mniejsze, tym bezpieczniej.
+- **β** — indeks niezawodności: β = −Φ⁻¹(p_f). Im większe β, tym mniejsze p_f.
+- To **ta sama** informacja w dwóch skalach (wykres 3 pokazuje krzywą).
+
+### Co widać na wykresach?
+1. **R_k** — rozkład nośności; czerwone = po stronie awarii względem V.
+2. **g = R_k − V** — ten sam warunek: awaria gdy g < 0.
+3. **β ↔ p_f** — Twój wynik na standardowej krzywej.
+4. Przy **SS**: progi b_i i narastanie iloczynu p_cond → p_f.
+
 ### Metody
-- **CMC** — klasyczne Monte Carlo: p_f ≈ n_awarii / N, β = −Φ⁻¹(p_f).
-- **Subset Simulation** — rzadkie zdarzenia przez poziomy warunkowe
-  \(p_f = \prod p_i\) (Au & Beck), MCMC: Modified Metropolis w przestrzeni u.
+- **CMC** — klasyczne Monte Carlo: p_f ≈ n_awarii / N.
+- **Subset Simulation** — rzadkie awarie przez poziomy warunkowe
+  \(p_f = \prod p_i\) (Au & Beck) + Modified Metropolis.
 
 ### Dane
 1. **B, L, D_f, V** oraz μ, SD dla **γ, φ′, c′**.
 2. μ, SD → lognormal (ta sama średnia i wariancja).
-3. Awaria: \(R_k < V\).
+3. Awaria w modelu: \(R_k < V\).
 
 \[
 \delta=\sigma/\mu,\quad
